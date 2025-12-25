@@ -9,18 +9,20 @@
  import AppKit
  import Combine
 
- class ClipboardManager: NSObject {
-     private var clipboardItems: [ClipboardItem] = []
-     private var lastChangeCount: Int = 0
-     private var timer: Timer?
-     private let maxItems = 50 // Maximum clipboard items to store
+class ClipboardManager: NSObject {
+    private var clipboardItems: [ClipboardItem] = []
+    private var lastChangeCount: Int = 0
+    private var timer: Timer?
+    private let defaults = UserDefaults.standard
+    private let clipboardItemsKey = "clipboardItems"
 
-     var onClipboardUpdate: (() -> Void)?
+    var onClipboardUpdate: (() -> Void)?
 
-     override init() {
-         super.init()
-         startMonitoring()
-     }
+    override init() {
+        super.init()
+        loadClipboardItems()
+        startMonitoring()
+    }
 
      deinit {
          stopMonitoring()
@@ -35,10 +37,33 @@
          }
      }
 
-     private func stopMonitoring() {
-         timer?.invalidate()
-         timer = nil
-     }
+    private func stopMonitoring() {
+        timer?.invalidate()
+        timer = nil
+    }
+
+    private func saveClipboardItems() {
+        do {
+            let data = try JSONEncoder().encode(clipboardItems)
+            defaults.set(data, forKey: clipboardItemsKey)
+        } catch {
+            print("Failed to save clipboard items: \(error)")
+        }
+    }
+
+    private func loadClipboardItems() {
+        guard let data = defaults.data(forKey: clipboardItemsKey) else {
+            return
+        }
+
+        do {
+            clipboardItems = try JSONDecoder().decode([ClipboardItem].self, from: data)
+        } catch {
+            print("Failed to load clipboard items: \(error)")
+            // Clear corrupted data
+            defaults.removeObject(forKey: clipboardItemsKey)
+        }
+    }
 
      private func checkClipboard() {
          let currentChangeCount = NSPasteboard.general.changeCount
@@ -66,21 +91,23 @@
          return pasteboardString.trimmingCharacters(in: .whitespacesAndNewlines)
      }
 
-     private func addClipboardItem(_ content: String) {
-         let newItem = ClipboardItem(content: content, timestamp: Date())
+    private func addClipboardItem(_ content: String) {
+        let newItem = ClipboardItem(content: content, timestamp: Date())
 
-         // Remove duplicates and add to front
-         var updatedItems = clipboardItems
-         updatedItems.removeAll { $0.content == content }
-         updatedItems.insert(newItem, at: 0)
+        // Remove duplicates and add to front
+        var updatedItems = clipboardItems
+        updatedItems.removeAll { $0.content == content }
+        updatedItems.insert(newItem, at: 0)
 
-         // Keep only the maximum number of items
-         if updatedItems.count > maxItems {
-             updatedItems = Array(updatedItems.prefix(maxItems))
-         }
+        // Keep only the maximum number of items
+        let maxItems = SettingsManager.shared.maxItems
+        if updatedItems.count > maxItems {
+            updatedItems = Array(updatedItems.prefix(maxItems))
+        }
 
-         clipboardItems = updatedItems
-     }
+        clipboardItems = updatedItems
+        saveClipboardItems()
+    }
 
      func getClipboardItems(limit: Int? = nil) -> [ClipboardItem] {
          if let limit = limit {
@@ -89,25 +116,61 @@
          return clipboardItems
      }
 
-     func copyToClipboard(_ item: ClipboardItem) {
-         NSPasteboard.general.clearContents()
-         NSPasteboard.general.setString(item.content, forType: .string)
-
-         // Move item to front if setting is enabled
-         if SettingsManager.shared.autoMoveToTop {
-             if let index = clipboardItems.firstIndex(where: { $0.id == item.id }) {
-                 var updatedItems = clipboardItems
-                 let movedItem = updatedItems.remove(at: index)
-                 updatedItems.insert(movedItem, at: 0)
-                 clipboardItems = updatedItems
-             }
-         }
+     func getStoredItemsCount() -> Int {
+         return clipboardItems.count
      }
 
-     func clearClipboardHistory() {
-         clipboardItems.removeAll()
-         onClipboardUpdate?()
-     }
+    func copyToClipboard(_ item: ClipboardItem) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(item.content, forType: .string)
+
+        // Move item to front if setting is enabled
+        if SettingsManager.shared.autoMoveToTop {
+            if let index = clipboardItems.firstIndex(where: { $0.id == item.id }) {
+                var updatedItems = clipboardItems
+                let movedItem = updatedItems.remove(at: index)
+                updatedItems.insert(movedItem, at: 0)
+                clipboardItems = updatedItems
+                saveClipboardItems()
+            }
+        }
+    }
+
+    func clearClipboardHistory() {
+        clipboardItems.removeAll()
+        saveClipboardItems()
+        onClipboardUpdate?()
+    }
+
+    func truncateItems(to count: Int) {
+        if clipboardItems.count > count {
+            clipboardItems = Array(clipboardItems.prefix(count))
+            saveClipboardItems()
+            onClipboardUpdate?()
+        }
+    }
+
+    func togglePin(for item: ClipboardItem) {
+        if let index = clipboardItems.firstIndex(where: { $0.id == item.id }) {
+            clipboardItems[index].isPinned.toggle()
+            saveClipboardItems()
+            onClipboardUpdate?()
+        }
+    }
+
+    func deleteItem(_ item: ClipboardItem) {
+        clipboardItems.removeAll { $0.id == item.id }
+        saveClipboardItems()
+        onClipboardUpdate?()
+    }
+
+    func getPinnedItems() -> [ClipboardItem] {
+        return clipboardItems.filter { $0.isPinned }
+    }
+
+    func getUnpinnedItems() -> [ClipboardItem] {
+        return clipboardItems.filter { !$0.isPinned }
+    }
  }
 
  // ObservableObject wrapper for ClipboardManager
@@ -129,9 +192,10 @@
          clipboardItems = clipboardManager.getClipboardItems()
      }
 
-     func getClipboardItems(limit: Int? = nil) -> [ClipboardItem] {
-         return clipboardManager.getClipboardItems(limit: limit)
-     }
+    func getClipboardItems(limit: Int? = nil) -> [ClipboardItem] {
+        let effectiveLimit = limit ?? SettingsManager.shared.maxItems
+        return clipboardManager.getClipboardItems(limit: effectiveLimit)
+    }
 
      func copyToClipboard(_ item: ClipboardItem) {
          clipboardManager.copyToClipboard(item)
@@ -145,18 +209,62 @@
          clipboardManager.clearClipboardHistory()
          updateItems()
      }
- }
 
- struct ClipboardItem: Identifiable, Equatable {
-     let id = UUID()
-     let content: String
-     let timestamp: Date
+     func truncateItems(to count: Int) {
+         clipboardManager.truncateItems(to: count)
+         updateItems()
+     }
 
-     var displayText: String {
-         let maxLength = 50
-         if content.count <= maxLength {
-             return content
-         }
-         return String(content.prefix(maxLength)) + "..."
+     func getStoredItemsCount() -> Int {
+         return clipboardManager.getStoredItemsCount()
+     }
+
+     func togglePin(for item: ClipboardItem) {
+         clipboardManager.togglePin(for: item)
+         updateItems()
+     }
+
+     func deleteItem(_ item: ClipboardItem) {
+         clipboardManager.deleteItem(item)
+         updateItems()
+     }
+
+     func getPinnedItems() -> [ClipboardItem] {
+         return clipboardManager.getPinnedItems()
+     }
+
+     func getUnpinnedItems() -> [ClipboardItem] {
+         return clipboardManager.getUnpinnedItems()
      }
  }
+
+struct ClipboardItem: Identifiable, Equatable, Codable {
+    let id: UUID
+    let content: String
+    let timestamp: Date
+    var isPinned: Bool
+
+    init(content: String, timestamp: Date = Date(), isPinned: Bool = false) {
+        self.id = UUID()
+        self.content = content
+        self.timestamp = timestamp
+        self.isPinned = isPinned
+    }
+
+    // Custom decoding to handle migration from older versions without isPinned
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        content = try container.decode(String.self, forKey: .content)
+        timestamp = try container.decode(Date.self, forKey: .timestamp)
+        isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
+    }
+
+    var displayText: String {
+        let maxLength = 50
+        if content.count <= maxLength {
+            return content
+        }
+        return String(content.prefix(maxLength)) + "..."
+    }
+}

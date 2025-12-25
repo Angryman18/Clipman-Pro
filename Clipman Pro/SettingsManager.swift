@@ -5,43 +5,43 @@
  //  Created by Shyam Mahanta on 25/12/25.
  //
 
- import Foundation
+import Foundation
+import Combine
+import AppKit
 
- class SettingsManager {
-     static let shared = SettingsManager()
+class SettingsManager: ObservableObject {
+    static let shared = SettingsManager()
 
      private let defaults = UserDefaults.standard
 
      // Settings keys
      private let maxItemsKey = "maxItems"
      private let autoMoveToTopKey = "autoMoveToTop"
-     private let showMenuBarIconKey = "showMenuBarIcon"
 
-     private init() {
-         // Set default values
-         if defaults.object(forKey: maxItemsKey) == nil {
-             defaults.set(10, forKey: maxItemsKey)
-         }
-         if defaults.object(forKey: autoMoveToTopKey) == nil {
-             defaults.set(true, forKey: autoMoveToTopKey)
-         }
-         if defaults.object(forKey: showMenuBarIconKey) == nil {
-             defaults.set(true, forKey: showMenuBarIconKey)
-         }
-     }
+    private init() {
+        // Set default values
+        if defaults.object(forKey: maxItemsKey) == nil {
+            defaults.set(50, forKey: maxItemsKey)
+        }
+        if defaults.object(forKey: autoMoveToTopKey) == nil {
+            defaults.set(true, forKey: autoMoveToTopKey)
+        }
 
-     var maxItems: Int {
-         get { defaults.integer(forKey: maxItemsKey) }
-         set { defaults.set(newValue, forKey: maxItemsKey) }
-     }
+        // Initialize published properties
+        self.maxItems = defaults.integer(forKey: maxItemsKey)
+        self.autoMoveToTop = defaults.bool(forKey: autoMoveToTopKey)
+    }
 
-     var autoMoveToTop: Bool {
-         get { defaults.bool(forKey: autoMoveToTopKey) }
-         set { defaults.set(newValue, forKey: autoMoveToTopKey) }
-     }
+    @Published var maxItems: Int {
+        didSet {
+            defaults.set(maxItems, forKey: maxItemsKey)
+        }
+    }
 
-     var showMenuBarIcon: Bool {
-         get { defaults.bool(forKey: showMenuBarIconKey) }
-         set { defaults.set(newValue, forKey: showMenuBarIconKey) }
-     }
+    @Published var autoMoveToTop: Bool {
+        didSet {
+            defaults.set(autoMoveToTop, forKey: autoMoveToTopKey)
+        }
+    }
+
  }
