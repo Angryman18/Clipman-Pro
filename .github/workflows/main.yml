@@ -16,9 +16,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # Select Xcode (must match your local project version)
       - name: Select Xcode 16
         run: sudo xcode-select -s /Applications/Xcode_16.app
 
+      - name: Verify Xcode
+        run: xcodebuild -version
+
+      # Build the macOS SwiftUI app
       - name: Build macOS app
         run: |
           xcodebuild \
@@ -27,15 +32,24 @@ jobs:
             -derivedDataPath build \
             clean build
 
+      # Prepare DMG folder with Applications shortcut
+      - name: Prepare DMG layout
+        run: |
+          mkdir dmg
+          cp -R "build/Build/Products/Release/Clipman Pro.app" dmg/
+          ln -s /Applications dmg/Applications
+
+      # Create drag-to-install DMG
       - name: Create DMG
         run: |
           hdiutil create \
             -volname "Clipman Pro" \
-            -srcfolder "build/Build/Products/Release/Clipman Pro.app" \
+            -srcfolder dmg \
             -ov \
             -format UDZO \
             "Clipman-Pro.dmg"
 
+      # Upload DMG to GitHub Release
       - name: Upload DMG to Release
         uses: softprops/action-gh-release@v2
         env:
