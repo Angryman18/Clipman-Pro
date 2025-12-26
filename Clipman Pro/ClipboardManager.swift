@@ -124,9 +124,16 @@ class ClipboardManager: NSObject {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(item.content, forType: .string)
 
-        // Move item to front if setting is enabled
-        if SettingsManager.shared.autoMoveToTop {
-            if let index = clipboardItems.firstIndex(where: { $0.id == item.id }) {
+        if let index = clipboardItems.firstIndex(where: { $0.id == item.id }) {
+            if item.isPinned {
+                // For pinned items, always move to top when copied
+                var updatedItems = clipboardItems
+                let movedItem = updatedItems.remove(at: index)
+                updatedItems.insert(movedItem, at: 0)
+                clipboardItems = updatedItems
+                saveClipboardItems()
+            } else if SettingsManager.shared.autoMoveToTop {
+                // For unpinned items, follow the auto move to top setting
                 var updatedItems = clipboardItems
                 let movedItem = updatedItems.remove(at: index)
                 updatedItems.insert(movedItem, at: 0)
@@ -152,7 +159,27 @@ class ClipboardManager: NSObject {
 
     func togglePin(for item: ClipboardItem) {
         if let index = clipboardItems.firstIndex(where: { $0.id == item.id }) {
+            let wasPinned = clipboardItems[index].isPinned
             clipboardItems[index].isPinned.toggle()
+
+            if !wasPinned { // Item is now being pinned
+                // Move the newly pinned item after the last pinned item
+                let itemToMove = clipboardItems.remove(at: index)
+
+                // Find the index of the last pinned item
+                var lastPinnedIndex = -1
+                for i in 0..<clipboardItems.count {
+                    if clipboardItems[i].isPinned {
+                        lastPinnedIndex = i
+                    }
+                }
+
+                // Insert after the last pinned item (or at beginning if no pinned items)
+                let insertIndex = lastPinnedIndex + 1
+                clipboardItems.insert(itemToMove, at: insertIndex)
+            }
+            // If unpinning, leave it in current position
+
             saveClipboardItems()
             onClipboardUpdate?()
         }
@@ -177,7 +204,7 @@ class ClipboardManager: NSObject {
  class ObservableClipboardManager: ObservableObject {
      @Published private(set) var clipboardItems: [ClipboardItem] = []
 
-     private let clipboardManager: ClipboardManager
+     let clipboardManager: ClipboardManager
      private var cancellables = Set<AnyCancellable>()
 
      init() {

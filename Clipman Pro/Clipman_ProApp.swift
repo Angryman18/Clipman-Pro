@@ -13,6 +13,11 @@
      @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
      @StateObject private var clipboardManager = ObservableClipboardManager()
 
+     init() {
+         // Pass the shared clipboard manager to the app delegate
+         appDelegate.clipboardManager = clipboardManager
+     }
+
      var body: some Scene {
          WindowGroup {
              ContentView()
@@ -20,6 +25,7 @@
          }
          .windowStyle(.titleBar)
          .windowToolbarStyle(.unified)
+         .defaultSize(width: 300, height: 200)
      }
  }
 
@@ -156,9 +162,15 @@ class ClipboardMenuItemView: NSView {
 
     private func updateBackgroundColor(isHovered: Bool) {
         wantsLayer = true
-        layer?.backgroundColor = isHovered ?
-            NSColor.selectedMenuItemColor.cgColor :
-            NSColor.clear.cgColor
+
+        if isHovered {
+            // Use system menu highlight colors for proper appearance
+            layer?.backgroundColor = NSColor.selectedMenuItemColor.cgColor
+            textField.textColor = NSColor.selectedMenuItemTextColor
+        } else {
+            layer?.backgroundColor = NSColor.clear.cgColor
+            textField.textColor = NSColor.labelColor
+        }
     }
 
     override func updateTrackingAreas() {
@@ -187,11 +199,11 @@ class ClipboardMenuItemView: NSView {
 
 class AppDelegate: NSObject, NSApplicationDelegate {
      var statusItem: NSStatusItem?
-     var clipboardManager: ClipboardManager?
+     var clipboardManager: ObservableClipboardManager?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        clipboardManager = ClipboardManager()
-        clipboardManager?.onClipboardUpdate = { [weak self] in
+        // clipboardManager will be set from the app
+        clipboardManager?.clipboardManager.onClipboardUpdate = { [weak self] in
             DispatchQueue.main.async {
                 self?.updateMenu()
             }
@@ -359,6 +371,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
          • Quick access from menu bar
          • Customizable number of items
          • Auto-move copied items to top
+
+         Created by Shyam Mahanta
+         LinkedIn: https://www.linkedin.com/in/shyam-mahanta
 
          Version 1.0
          """
