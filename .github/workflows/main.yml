@@ -1,0 +1,36 @@
+name: macOS DMG Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build macOS app
+        run: |
+          xcodebuild \
+            -scheme "Clipman Pro" \
+            -configuration Release \
+            -derivedDataPath build \
+            clean build
+
+      - name: Create DMG
+        run: |
+          hdiutil create \
+            -volname "Clipman Pro" \
+            -srcfolder "build/Build/Products/Release/Clipman Pro.app" \
+            -ov \
+            -format UDZO \
+            "Clipman-Pro.dmg"
+
+      - name: Upload DMG to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "Clipman-Pro.dmg"
